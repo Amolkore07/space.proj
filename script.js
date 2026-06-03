@@ -131,8 +131,7 @@ function earthColor(u, v) {
 function cloudColor(u, v) {
     const n = fbm(u * 5, v * 5, 5);
     const wisp = fbm(u * 8 + 50, v * 8 + 50, 3);
-    const alpha = n > 0.55 ? clamp((n - 0.55) * 200, 0, 220) : 0;
-    const bright = 220 + 30 * wisp;
+    const bright = 240 + 15 * wisp;
     return { r: bright, g: bright, b: bright };
 }
 
@@ -144,12 +143,14 @@ function earthCloudTexture() {
     for (let y = 0; y < H; y++) {
         for (let x = 0; x < W; x++) {
             const u = x / W, v = y / H;
-            const col = cloudColor(u, v);
+            const n = fbm(u * 5, v * 5, 5);
+            const wisp = fbm(u * 8 + 50, v * 8 + 50, 3);
             const i = (y * W + x) * 4;
-            d.data[i] = clamp(col.r, 0, 255);
-            d.data[i + 1] = clamp(col.g, 0, 255);
-            d.data[i + 2] = clamp(col.b, 0, 255);
-            d.data[i + 3] = clamp(col.r * 0.3, 0, 200);
+            const alpha = n > 0.52 ? clamp((n - 0.52) * 300, 60, 220) : 0;
+            d.data[i] = 240;
+            d.data[i + 1] = 240;
+            d.data[i + 2] = 240;
+            d.data[i + 3] = alpha;
         }
     }
     ctx.putImageData(d, 0, 0);
@@ -303,7 +304,7 @@ const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.2;
+renderer.toneMappingExposure = 1.5;
 document.body.appendChild(renderer.domElement);
 
 const composer = new EffectComposer(renderer);
@@ -319,24 +320,28 @@ composer.addPass(bloomPass);
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
-controls.dampingFactor = 0.08;
-controls.minDistance = 5;
+controls.dampingFactor = 0.06;
+controls.minDistance = 3;
 controls.maxDistance = 200;
-controls.autoRotate = false;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 0.3;
 controls.target.set(0, 0, 0);
+controls.update();
 
 // === LIGHTING ===
-const ambientLight = new THREE.AmbientLight(0x222244, 0.5);
+const ambientLight = new THREE.AmbientLight(0x6688aa, 0.8);
 scene.add(ambientLight);
 
-const sunLight = new THREE.DirectionalLight(0xffffff, 2.5);
+const hemiLight = new THREE.HemisphereLight(0x88ccff, 0x554433, 0.7);
+scene.add(hemiLight);
+
+const sunLight = new THREE.PointLight(0xffeedd, 300, 0, 0.6);
 sunLight.position.set(0, 0, 0);
-sunLight.castShadow = false;
 scene.add(sunLight);
 
-const fillLight = new THREE.DirectionalLight(0x4488ff, 0.3);
-fillLight.position.set(-30, 20, -30);
-scene.add(fillLight);
+const sunFill = new THREE.PointLight(0xffeecc, 5, 0, 0);
+sunFill.position.set(0, 0, 0);
+scene.add(sunFill);
 
 // === STARFIELD ===
 const starCount = 20000;
@@ -409,14 +414,14 @@ scene.add(glowSprite2);
 
 // === PLANET DATA ===
 const planetData = [
-    { name: 'Mercury', radius: 0.5, orbit: 8, speed: 2.0, rotSpeed: 0.02, colorFn: mercuryColor, roughness: 0.8, metalness: 0.2 },
-    { name: 'Venus', radius: 0.9, orbit: 12, speed: 1.5, rotSpeed: -0.005, colorFn: venusColor, roughness: 0.7, metalness: 0.1 },
-    { name: 'Earth', radius: 1.0, orbit: 16, speed: 1.2, rotSpeed: 0.05, colorFn: earthColor, roughness: 0.6, metalness: 0.1 },
-    { name: 'Mars', radius: 0.6, orbit: 20, speed: 1.0, rotSpeed: 0.046, colorFn: marsColor, roughness: 0.8, metalness: 0.2 },
-    { name: 'Jupiter', radius: 2.8, orbit: 28, speed: 0.6, rotSpeed: 0.2, colorFn: jupiterColor, roughness: 0.5, metalness: 0.0 },
-    { name: 'Saturn', radius: 2.3, orbit: 36, speed: 0.4, rotSpeed: 0.18, colorFn: saturnColor, roughness: 0.5, metalness: 0.0 },
-    { name: 'Uranus', radius: 1.5, orbit: 44, speed: 0.3, rotSpeed: -0.1, colorFn: uranusColor, roughness: 0.4, metalness: 0.1 },
-    { name: 'Neptune', radius: 1.4, orbit: 52, speed: 0.2, rotSpeed: 0.12, colorFn: neptuneColor, roughness: 0.4, metalness: 0.1 },
+    { name: 'Mercury', radius: 0.5, orbit: 8, speed: 2.0, rotSpeed: 0.02, colorFn: mercuryColor, roughness: 0.7, metalness: 0.15 },
+    { name: 'Venus', radius: 0.9, orbit: 12, speed: 1.5, rotSpeed: -0.005, colorFn: venusColor, roughness: 0.6, metalness: 0.05 },
+    { name: 'Earth', radius: 1.0, orbit: 16, speed: 1.2, rotSpeed: 0.05, colorFn: earthColor, roughness: 0.5, metalness: 0.05 },
+    { name: 'Mars', radius: 0.6, orbit: 20, speed: 1.0, rotSpeed: 0.046, colorFn: marsColor, roughness: 0.65, metalness: 0.1 },
+    { name: 'Jupiter', radius: 2.8, orbit: 28, speed: 0.6, rotSpeed: 0.2, colorFn: jupiterColor, roughness: 0.4, metalness: 0.0 },
+    { name: 'Saturn', radius: 2.3, orbit: 36, speed: 0.4, rotSpeed: 0.18, colorFn: saturnColor, roughness: 0.4, metalness: 0.0 },
+    { name: 'Uranus', radius: 1.5, orbit: 44, speed: 0.3, rotSpeed: -0.1, colorFn: uranusColor, roughness: 0.3, metalness: 0.05 },
+    { name: 'Neptune', radius: 1.4, orbit: 52, speed: 0.2, rotSpeed: 0.12, colorFn: neptuneColor, roughness: 0.3, metalness: 0.05 },
 ];
 
 const planets = [];
@@ -441,7 +446,7 @@ planetData.forEach((data, idx) => {
         const cloudMat = new THREE.MeshBasicMaterial({
             map: cloudTex,
             transparent: true,
-            opacity: 0.35,
+            opacity: 0.5,
             blending: THREE.AdditiveBlending,
             depthWrite: false,
             side: THREE.DoubleSide,
@@ -481,9 +486,9 @@ planetData.forEach((data, idx) => {
     }
     const orbitGeo = new THREE.BufferGeometry().setFromPoints(orbitPoints);
     const orbitMat = new THREE.LineBasicMaterial({
-        color: new THREE.Color(0x444466),
+        color: new THREE.Color(0x88bbdd),
         transparent: true,
-        opacity: 0.25,
+        opacity: 0.35,
     });
     const orbitLine = new THREE.Line(orbitGeo, orbitMat);
     scene.add(orbitLine);
