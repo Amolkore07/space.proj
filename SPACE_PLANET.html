@@ -3,96 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3D Solar System Simulation</title>
+    <title>3D Solar System</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-
-    <div class="universe">
-        <div class="solar-system">
-            <div class="sun"></div>
-
-            <div class="orbit mercury-orbit">
-                <div class="planet-container">
-                    <div class="planet mercury"></div>
-                </div>
-            </div>
-
-            <div class="orbit venus-orbit">
-                <div class="planet-container">
-                    <div class="planet venus"></div>
-                </div>
-            </div>
-
-            <div class="orbit earth-orbit">
-                <div class="planet-container">
-                    <div class="planet earth"><div class="moon"></div></div>
-                </div>
-            </div>
-
-            <div class="orbit mars-orbit">
-                <div class="planet-container">
-                    <div class="planet mars">
-                        <div class="moon-system">
-                            <div class="moon mars-moon-1"></div>
-                            <div class="moon mars-moon-2"></div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="orbit jupiter-orbit">
-                <div class="planet-container">
-                    <div class="planet jupiter">
-                        <div class="moon-system">
-                            <div class="moon jupiter-moon-1"></div>
-                            <div class="moon jupiter-moon-2"></div>
-                            <div class="moon jupiter-moon-3"></div>
-                            <div class="moon jupiter-moon-4"></div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="orbit saturn-orbit">
-                <div class="planet-container">
-                    <div class="planet saturn">
-                        <div class="ring"></div>
-                        <div class="moon-system">
-                            <div class="moon saturn-moon-1"></div>
-                            <div class="moon saturn-moon-2"></div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="orbit uranus-orbit">
-                <div class="planet-container">
-                    <div class="planet uranus">
-                        <div class="moon-system">
-                            <div class="moon uranus-moon-1"></div>
-                            <div class="moon uranus-moon-2"></div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="orbit neptune-orbit">
-                <div class="planet-container">
-                    <div class="planet neptune">
-                        <div class="moon-system">
-                            <div class="moon neptune-moon-1"></div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <a href="blackhole.html" class="bh-link" title="Visit Black Hole">
-        <div class="bh-icon"></div>
-    </a>
-
-    <script src="script.js"></script>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+    <script type="module" src="script.js"></script>
 </body>
 </html>
