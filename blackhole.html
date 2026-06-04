@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gargantua — Black Hole</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #000; overflow: hidden; }
+        canvas { display: block; }
+        #info {
+            position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+            color: rgba(255,255,255,0.25); font: 14px/1.4 system-ui, sans-serif;
+            text-align: center; pointer-events: none; letter-spacing: 1px;
+            user-select: none;
+        }
+        #info span { opacity: 0.5; }
+    </style>
+</head>
+<body>
+    <div id="info">✦  DRAG TO ORBIT  ·  SCROLL TO ZOOM  ✦</div>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+    <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+    // ─── Noise Utilities ───
+    function hash2D(x, y) {
+        let h = x * 374761393 + y * 668265263;
+        h = ((h ^ (h >> 13)) * 1274126177) & 0x7fffffff;
+        return h / 0x7fffffff;
+    }
+    function smoothNoise(x, y) {
+        const ix = Math.floor(x), iy = Math.floor(y);
+        const fx = x - ix, fy = y - iy;
+        const sx = fx * fx * (3 - 2 * fx);
+        const sy = fy * fy * (3 - 2 * fy);
+        const v00 = hash2D(ix, iy), v10 = hash2D(ix + 1, iy);
+        const v01 = hash2D(ix, iy + 1), v11 = hash2D(ix + 1, iy + 1);
+        return v00 * (1 - sx) * (1 - sy) + v10 * sx * (1 - sy) + v01 * (1 - sx) * sy + v11 * sx * sy;
+    }
+    function fbm(x, y, oct = 4) {
+        let v = 0, a = 1, f = 1, m = 0;
+        for (let i = 0; i < oct; i++) { v += a * smoothNoise(x * f, y * f); m += a; a *= 0.5; f *= 2; }
+        return v / m;
+    }
+    function clamp(v, mn, mx) { return Math.max(mn, Math.min(mx, v)); }
+    function lerp(a, b, t) { return a + (b - a) * t; }
+
+    // ─── Scene Setup ───
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x000000);
+
+    const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 2000);
+    camera.position.set(18, 10, 28);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.2;
+    document.body.appendChild(renderer.domElement);
+
+    const composer = new EffectComposer(renderer);
+    const renderPass = new RenderPass(scene, camera);
+    composer.addPass(renderPass);
+
+    const bloomPass = new UnrealBloomPass(
+        new THREE.Vector2(window.innerWidth, window.innerHeight),
+        0.85, 0.15, 0.02
+    );
+    composer.addPass(bloomPass);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.minDistance = 5;
+    controls.maxDistance = 120;
+    controls.autoRotate = true;
+    controls.autoRotateSpeed = 0.8;
+    controls.target.set(0, 0, 0);
+    controls.update();
+
+    // ─── Starfield ───
+    const starCount = 30000;
+    const starGeo = new THREE.BufferGeometry();
+    const starPos = new Float32Array(starCount * 3);
+    const starSizes = new Float32Array(starCount);
+    const starColors = new Float32Array(starCount * 3);
+    for (let i = 0; i < starCount; i++) {
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.acos(2 * Math.random() - 1);
+        const r = 400 + Math.random() * 1000;
+        starPos[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+        starPos[i * 3 + 1] = r * Math.cos(phi);
+        starPos[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+        starSizes[i] = 0.3 + Math.random() * 2;
+        const temp = Math.random();
+        if (temp < 0.08) {
+            starColors[i * 3] = 0.6; starColors[i * 3 + 1] = 0.7; starColors[i * 3 + 2] = 1.0;
+        } else if (temp < 0.18) {
+            starColors[i * 3] = 1.0; starColors[i * 3 + 1] = 0.8; starColors[i * 3 + 2] = 0.5;
+        } else {
+            const b = 0.5 + Math.random() * 0.5;
+            starColors[i * 3] = b; starColors[i * 3 + 1] = b; starColors[i * 3 + 2] = b;
+        }
+    }
+    starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+    starGeo.setAttribute('size', new THREE.BufferAttribute(starSizes, 1));
+    starGeo.setAttribute('color', new THREE.BufferAttribute(starColors, 3));
+    const starMat = new THREE.PointsMaterial({
+        size: 0.6, vertexColors: true, transparent: true, opacity: 0.9,
+        sizeAttenuation: true, blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+    scene.add(new THREE.Points(starGeo, starMat));
+
+    // ─── Black Hole Constants ───
+    const SHADOW_R = 3.5;
+    const PHOTON_INNER = SHADOW_R;
+    const PHOTON_OUTER = SHADOW_R + 0.7;
+    const DISK_INNER = SHADOW_R + 1.3;
+    const DISK_OUTER = 28;
+
+    // ─── Accretion Disk Texture ───
+    function makeDiskTexture(opts = {}) {
+        const { dopStr = 0.5, alphaMul = 220, sharpness = 1.0 } = opts;
+        const W = 2048, H = 1024;
+        const c = document.createElement('canvas');
+        c.width = W; c.height = H;
+        const ctx = c.getContext('2d');
+        const d = ctx.createImageData(W, H);
+        for (let y = 0; y < H; y++) {
+            for (let x = 0; x < W; x++) {
+                const u = x / W, v = y / H, angle = v * Math.PI * 2;
+
+                // Sharp radial profile: very bright inner edge, quick falloff
+                const rProfile = u;
+                const innerEdge = 1 - Math.exp(-Math.pow((1 - rProfile) * 6, 3));
+                const density = Math.exp(-rProfile * 4.0) * (1 - rProfile * 0.5);
+                const sharpDensity = Math.pow(density, 0.5 + 0.5 * sharpness);
+
+                // Temperature: inner = blue-white, outer = deep red
+                const temp = Math.pow(Math.max(0, 1 - rProfile * 1.15), 0.6);
+
+                // Doppler beaming — relativistic brightness boost
+                const doppler = 1 + dopStr * Math.sin(angle + 0.3);
+
+                // Multi-octave turbulence
+                const t1 = fbm(rProfile * 6 + 10, v * 6, 4);
+                const t2 = fbm(rProfile * 12 + 30, v * 12 + 50, 3);
+                const t3 = fbm(rProfile * 24 + 60, v * 24 + 90, 2);
+                const turb = 0.6 + 0.4 * (t1 * 0.5 + t2 * 0.3 + t3 * 0.2);
+
+                // Spiral density waves (3-arm spiral)
+                const spiral = 0.7 + 0.3 * Math.sin(angle * 3 - rProfile * 22 + 0.7 * Math.sin(angle + 0.5));
+
+                // Hot spots — random bright clumps
+                const hs1 = Math.pow(Math.abs(smoothNoise(rProfile * 15 + 100, v * 15 + 200)), 2.5);
+                const hs2 = Math.pow(Math.abs(smoothNoise(rProfile * 20 + 300, v * 20 + 400)), 3);
+                const hotSpots = 1 + 0.4 * (hs1 + hs2 * 0.5);
+
+                // Combined brightness
+                let bright = sharpDensity * doppler * spiral * turb * hotSpots;
+                bright = Math.pow(bright, 0.75);
+
+                // Color mapping — black body temperature gradient
+                let r, g, b;
+                if (temp > 0.9) {
+                    // Innermost: blue-white (10^5 K)
+                    const t = (temp - 0.9) / 0.1;
+                    r = 160 + 95 * t; g = 200 + 55 * t; b = 255;
+                } else if (temp > 0.7) {
+                    // Hot inner: white with blue tint
+                    const t = (temp - 0.7) / 0.2;
+                    r = 255; g = 210 + 45 * t; b = 180 + 75 * t;
+                } else if (temp > 0.5) {
+                    // Warm: yellow-white
+                    const t = (temp - 0.5) / 0.2;
+                    r = 255; g = 255; b = 120 + 60 * (1 - t);
+                } else if (temp > 0.3) {
+                    // Cool: orange
+                    const t = (temp - 0.3) / 0.2;
+                    r = 255; g = 180 + 75 * (1 - t); b = 40 + 80 * (1 - t);
+                } else if (temp > 0.12) {
+                    // Cold: red-orange
+                    const t = (temp - 0.12) / 0.18;
+                    r = 255; g = 60 + 120 * t; b = 10 + 30 * t;
+                } else {
+                    // Outermost: dim red
+                    const t = temp / 0.12;
+                    r = 80 + 175 * t; g = 5 + 55 * t; b = 2 + 8 * t;
+                }
+
+                r *= bright; g *= bright; b *= bright;
+                const i = (y * W + x) * 4;
+                d.data[i] = clamp(r, 0, 255);
+                d.data[i + 1] = clamp(g, 0, 255);
+                d.data[i + 2] = clamp(b, 0, 255);
+                d.data[i + 3] = clamp(bright * alphaMul * (1 - rProfile * 0.3), 0, 255);
+            }
+        }
+        ctx.putImageData(d, 0, 0);
+        return c;
+    }
+
+    // ─── Photon Ring Texture ───
+    function makePhotonRingTexture() {
+        const W = 1024, H = 128;
+        const c = document.createElement('canvas');
+        c.width = W; c.height = H;
+        const ctx = c.getContext('2d');
+        const d = ctx.createImageData(W, H);
+        for (let y = 0; y < H; y++) {
+            for (let x = 0; x < W; x++) {
+                const u = x / W, v = y / H;
+                // Ultra-narrow gaussian for sharp bright ring
+                const dx = (u - 0.5) * 14;
+                const intensity = Math.exp(-dx * dx);
+                // Subtle azimuthal variation
+                const flicker = 0.92 + 0.08 * (fbm(v * 12, u * 3, 2) * 0.7 + 0.3 * Math.sin(v * 50 + u * 100));
+                const val = clamp(intensity * 255 * flicker, 0, 255);
+                const i = (y * W + x) * 4;
+                d.data[i] = 255; d.data[i + 1] = 245; d.data[i + 2] = 220;
+                d.data[i + 3] = val;
+            }
+        }
+        ctx.putImageData(d, 0, 0);
+        return c;
+    }
+
+    // ─── Glow / Corona Texture ───
+    function makeGlowTexture() {
+        const s = 512;
+        const c = document.createElement('canvas');
+        c.width = s; c.height = s;
+        const ctx = c.getContext('2d');
+        const g = ctx.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
+        g.addColorStop(0.00, 'rgba(200,220,255,0.35)');
+        g.addColorStop(0.03, 'rgba(255,220,180,0.20)');
+        g.addColorStop(0.08, 'rgba(255,180,120,0.12)');
+        g.addColorStop(0.20, 'rgba(255,130,60,0.06)');
+        g.addColorStop(0.40, 'rgba(200,80,30,0.025)');
+        g.addColorStop(1.00, 'rgba(100,30,0,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, s, s);
+        return c;
+    }
+
+    // ─── Build Black Hole ───
+    const bhGroup = new THREE.Group();
+
+    // 1. Shadow sphere — pure black event horizon
+    const shadowMat = new THREE.MeshBasicMaterial({
+        color: 0x000000,
+        side: THREE.FrontSide,
+    });
+    const shadow = new THREE.Mesh(new THREE.SphereGeometry(SHADOW_R, 96, 96), shadowMat);
+    bhGroup.add(shadow);
+
+    // 2. Photon ring — thin bright ring at the shadow edge
+    const photonTex = new THREE.CanvasTexture(makePhotonRingTexture());
+    photonTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    const photonMat = new THREE.MeshBasicMaterial({
+        map: photonTex, side: THREE.DoubleSide, transparent: true,
+        blending: THREE.AdditiveBlending, depthWrite: false,
+        opacity: 1.0,
+    });
+    const photonRing = new THREE.Mesh(
+        new THREE.RingGeometry(PHOTON_INNER, PHOTON_OUTER, 256),
+        photonMat
+    );
+    photonRing.rotation.x = -Math.PI / 2;
+    bhGroup.add(photonRing);
+
+    // 3. Main accretion disk — the visible near side (~20° tilt)
+    const diskTex = new THREE.CanvasTexture(makeDiskTexture({ dopStr: 0.55, alphaMul: 240, sharpness: 1.2 }));
+    diskTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    const diskMat = new THREE.MeshBasicMaterial({
+        map: diskTex, side: THREE.DoubleSide, transparent: true,
+        depthWrite: false, blending: THREE.AdditiveBlending,
+        opacity: 0.88,
+    });
+    const disk = new THREE.Mesh(
+        new THREE.RingGeometry(DISK_INNER, DISK_OUTER, 256),
+        diskMat
+    );
+    disk.rotation.x = -Math.PI / 2 + 0.3;
+    bhGroup.add(disk);
+
+    // 4. Hot inner disk — opposite tilt for the "double-lobed" Interstellar silhouette
+    const hotTex = new THREE.CanvasTexture(makeDiskTexture({
+        dopStr: 0.7, alphaMul: 260, sharpness: 1.5,
+    }));
+    hotTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    const hotMat = new THREE.MeshBasicMaterial({
+        map: hotTex, side: THREE.DoubleSide, transparent: true,
+        depthWrite: false, blending: THREE.AdditiveBlending,
+        opacity: 0.7,
+    });
+    const hotDisk = new THREE.Mesh(
+        new THREE.RingGeometry(SHADOW_R + 1.0, 16, 192),
+        hotMat
+    );
+    hotDisk.rotation.x = -Math.PI / 2 - 0.22;
+    bhGroup.add(hotDisk);
+
+    // 5. Lensing ring (top) — simulates light bending over the black hole
+    const lensTopTex = new THREE.CanvasTexture(makeDiskTexture({
+        dopStr: 0.35, alphaMul: 160, sharpness: 0.8,
+    }));
+    lensTopTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    const lensTopMat = new THREE.MeshBasicMaterial({
+        map: lensTopTex, side: THREE.DoubleSide, transparent: true,
+        depthWrite: false, blending: THREE.AdditiveBlending,
+        opacity: 0.45,
+    });
+    const lensTop = new THREE.Mesh(
+        new THREE.RingGeometry(SHADOW_R + 0.5, 14, 192),
+        lensTopMat
+    );
+    lensTop.rotation.x = -Math.PI / 2 - 0.08;
+    lensTop.position.y = SHADOW_R * 0.55;
+    bhGroup.add(lensTop);
+
+    // 6. Lensing ring (bottom) — light bending below
+    const lensBottomTex = new THREE.CanvasTexture(makeDiskTexture({
+        dopStr: 0.3, alphaMul: 140, sharpness: 0.7,
+    }));
+    lensBottomTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    const lensBottomMat = new THREE.MeshBasicMaterial({
+        map: lensBottomTex, side: THREE.DoubleSide, transparent: true,
+        depthWrite: false, blending: THREE.AdditiveBlending,
+        opacity: 0.35,
+    });
+    const lensBottom = new THREE.Mesh(
+        new THREE.RingGeometry(SHADOW_R + 0.8, 12, 192),
+        lensBottomMat
+    );
+    lensBottom.rotation.x = -Math.PI / 2 + 0.1;
+    lensBottom.position.y = -SHADOW_R * 0.35;
+    bhGroup.add(lensBottom);
+
+    // 7. Diffuse outer halo — very faint extended glow ring
+    const haloMat = new THREE.MeshBasicMaterial({
+        color: 0x4488ff, side: THREE.DoubleSide, transparent: true,
+        blending: THREE.AdditiveBlending, depthWrite: false,
+        opacity: 0.04,
+    });
+    const halo = new THREE.Mesh(
+        new THREE.RingGeometry(SHADOW_R + 3, SHADOW_R + 20, 128),
+        haloMat
+    );
+    halo.rotation.x = -Math.PI / 2 + 0.15;
+    bhGroup.add(halo);
+
+    // 8. Glow sprites — layered corona
+    const glowTex = new THREE.CanvasTexture(makeGlowTexture());
+    const glow1 = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: glowTex, transparent: true,
+        blending: THREE.AdditiveBlending, depthWrite: false,
+        opacity: 0.7,
+    }));
+    glow1.scale.set(55, 55, 1);
+    bhGroup.add(glow1);
+
+    const glow2 = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: glowTex, transparent: true,
+        blending: THREE.AdditiveBlending, depthWrite: false,
+        opacity: 0.35,
+    }));
+    glow2.scale.set(90, 90, 1);
+    bhGroup.add(glow2);
+
+    // Add to scene with a root wrapper for rotation
+    const root = new THREE.Group();
+    root.add(bhGroup);
+    scene.add(root);
+
+    const parts = {
+        disk, hotDisk, photonRing, lensTop, lensBottom, root, time: 0,
+    };
+
+    // ─── Animation ───
+    function animate() {
+        requestAnimationFrame(animate);
+        parts.time += 0.005;
+
+        // Differential rotation:
+        //   Inner disk spins fastest (Keplerian), outer spins slower
+        const baseSpeed = 0.06 + 0.02 * Math.sin(parts.time * 0.06);
+        parts.disk.rotation.y += baseSpeed;
+        parts.hotDisk.rotation.y += baseSpeed * 1.6;
+        parts.photonRing.rotation.y += baseSpeed * 0.3;
+        parts.lensTop.rotation.y += baseSpeed * 1.1;
+        parts.lensBottom.rotation.y += baseSpeed * 0.9;
+        parts.root.rotation.y += baseSpeed * 0.01;
+
+        controls.update();
+        composer.render();
+    }
+    animate();
+
+    // ─── Resize ───
+    window.addEventListener('resize', () => {
+        const w = window.innerWidth, h = window.innerHeight;
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+        renderer.setSize(w, h);
+        composer.setSize(w, h);
+    });
+    </script>
+</body>
+</html>

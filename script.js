@@ -495,6 +495,218 @@ planetData.forEach((data, idx) => {
     orbitLines.push(orbitLine);
 });
 
+// === BLACK HOLE ===
+const BH_POS = new THREE.Vector3(-70, 3, -60);
+const BH_SHADOW_R = 3.5;
+const BH_PHOTON_INNER = BH_SHADOW_R;
+const BH_PHOTON_OUTER = BH_SHADOW_R + 0.8;
+const BH_DISK_INNER = BH_SHADOW_R + 1.2;
+const BH_DISK_OUTER = 26;
+
+function makeDiskTextureParams(opts = {}) {
+    const {
+        dopplerStr = 0.45, alphaMul = 200,
+    } = opts;
+    const W = 1024, H = 512;
+    const c = document.createElement('canvas');
+    c.width = W; c.height = H;
+    const ctx = c.getContext('2d');
+    const d = ctx.createImageData(W, H);
+    for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+            const u = x / W, v = y / H, angle = v * Math.PI * 2;
+            const temp = Math.pow(Math.max(0, 1 - u * 1.1), 0.7);
+            const density = Math.exp(-u * 3.2) * (1 - u * 0.6);
+            const doppler = 1 + dopplerStr * Math.sin(angle);
+            const t1 = fbm(u * 5 + 10, v * 5, 3);
+            const t2 = fbm(u * 10 + 20, v * 10 + 30, 2);
+            const turb = 0.7 + 0.3 * (t1 * 0.7 + t2 * 0.3);
+            const spiral = 0.75 + 0.25 * Math.sin(angle * 3 - u * 18 + 0.5 * Math.sin(angle));
+            let bright = density * doppler * spiral * turb;
+            bright = Math.pow(bright, 0.8);
+            let r, g, b;
+            if (temp > 0.85) {
+                r = 180 + 75 * (temp - 0.85) / 0.15;
+                g = 210 + 45 * (temp - 0.85) / 0.15;
+                b = 255;
+            } else if (temp > 0.6) {
+                const t = (temp - 0.6) / 0.25;
+                r = 255; g = 180 + 75 * t; b = 150 + 105 * (1 - t);
+            } else if (temp > 0.35) {
+                const t = (temp - 0.35) / 0.25;
+                r = 255; g = 150 + 30 * t; b = 50 + 100 * (1 - t);
+            } else if (temp > 0.15) {
+                const t = (temp - 0.15) / 0.2;
+                r = 255; g = 40 + 110 * t; b = 10 + 40 * t;
+            } else {
+                const t = temp / 0.15;
+                r = 100 + 155 * t; g = 10 + 30 * t; b = 5 + 5 * t;
+            }
+            r *= bright; g *= bright; b *= bright;
+            const i = (y * W + x) * 4;
+            d.data[i] = clamp(r, 0, 255);
+            d.data[i + 1] = clamp(g, 0, 255);
+            d.data[i + 2] = clamp(b, 0, 255);
+            d.data[i + 3] = clamp(bright * alphaMul, 0, 255);
+        }
+    }
+    ctx.putImageData(d, 0, 0);
+    return c;
+}
+
+function makePhotonRingTexture() {
+    const W = 512, H = 64;
+    const c = document.createElement('canvas');
+    c.width = W; c.height = H;
+    const ctx = c.getContext('2d');
+    const d = ctx.createImageData(W, H);
+    for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+            const u = x / W, v = y / H;
+            const dx = (u - 0.5) * 10;
+            const intensity = Math.exp(-dx * dx);
+            const flicker = 0.9 + 0.1 * fbm(v * 8, u * 4, 2);
+            const val = clamp(intensity * 255 * flicker, 0, 255);
+            const i = (y * W + x) * 4;
+            d.data[i] = 255; d.data[i + 1] = 235; d.data[i + 2] = 200;
+            d.data[i + 3] = val;
+        }
+    }
+    ctx.putImageData(d, 0, 0);
+    return c;
+}
+
+function makeGlowTexture() {
+    const s = 256;
+    const c = document.createElement('canvas');
+    c.width = s; c.height = s;
+    const ctx = c.getContext('2d');
+    const g = ctx.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
+    g.addColorStop(0, 'rgba(180,200,255,0.3)');
+    g.addColorStop(0.05, 'rgba(255,200,150,0.15)');
+    g.addColorStop(0.15, 'rgba(255,150,80,0.08)');
+    g.addColorStop(0.4, 'rgba(255,100,30,0.03)');
+    g.addColorStop(1, 'rgba(255,50,0,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, s, s);
+    return c;
+}
+
+// Build black hole
+const bhGroup = new THREE.Group();
+bhGroup.position.copy(BH_POS);
+
+// Shadow sphere - the dark event horizon and gravitational shadow
+const bhShadow = new THREE.Mesh(
+    new THREE.SphereGeometry(BH_SHADOW_R, 64, 64),
+    new THREE.MeshBasicMaterial({ color: 0x000000 })
+);
+bhGroup.add(bhShadow);
+
+// Photon ring - bright thin ring at the edge of the shadow
+const bhPhotonTex = new THREE.CanvasTexture(makePhotonRingTexture());
+bhPhotonTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+const bhPhotonMat = new THREE.MeshBasicMaterial({
+    map: bhPhotonTex,
+    side: THREE.DoubleSide,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    opacity: 0.95,
+});
+const bhPhoton = new THREE.Mesh(
+    new THREE.RingGeometry(BH_PHOTON_INNER, BH_PHOTON_OUTER, 128),
+    bhPhotonMat
+);
+bhPhoton.rotation.x = -Math.PI / 2;
+bhGroup.add(bhPhoton);
+
+// Main accretion disk - tilted to create the iconic Interstellar look
+const bhDiskTex = new THREE.CanvasTexture(makeDiskTextureParams({}));
+bhDiskTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+const bhDiskMat = new THREE.MeshBasicMaterial({
+    map: bhDiskTex,
+    side: THREE.DoubleSide,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    opacity: 0.82,
+});
+const bhDisk = new THREE.Mesh(
+    new THREE.RingGeometry(BH_DISK_INNER, BH_DISK_OUTER, 128),
+    bhDiskMat
+);
+bhDisk.rotation.x = -Math.PI / 2 + 0.25;
+bhGroup.add(bhDisk);
+
+// Hot inner disk - smaller, brighter, with opposite tilt for depth
+const bhHotTex = new THREE.CanvasTexture(makeDiskTextureParams({
+    dopplerStr: 0.6, alphaMul: 250,
+}));
+bhHotTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+const bhHotMat = new THREE.MeshBasicMaterial({
+    map: bhHotTex,
+    side: THREE.DoubleSide,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    opacity: 0.65,
+});
+const bhHotDisk = new THREE.Mesh(
+    new THREE.RingGeometry(BH_SHADOW_R + 1.0, 14, 96),
+    bhHotMat
+);
+bhHotDisk.rotation.x = -Math.PI / 2 - 0.2;
+bhGroup.add(bhHotDisk);
+
+// Lensing ring - gravitational light bending effect (disk appears above)
+const bhLensTex = new THREE.CanvasTexture(makeDiskTextureParams({
+    dopplerStr: 0.3, alphaMul: 120,
+}));
+bhLensTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+const bhLensMat = new THREE.MeshBasicMaterial({
+    map: bhLensTex,
+    side: THREE.DoubleSide,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    opacity: 0.3,
+});
+const bhLens = new THREE.Mesh(
+    new THREE.RingGeometry(BH_SHADOW_R + 0.6, 10, 96),
+    bhLensMat
+);
+bhLens.rotation.x = -Math.PI / 2;
+bhLens.position.y = BH_SHADOW_R * 0.5;
+bhGroup.add(bhLens);
+
+// Glow sprites
+const bhGlowTex = new THREE.CanvasTexture(makeGlowTexture());
+const bhGlowMat1 = new THREE.SpriteMaterial({
+    map: bhGlowTex, transparent: true,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+    opacity: 0.6,
+});
+const bhGlow1 = new THREE.Sprite(bhGlowMat1);
+bhGlow1.scale.set(60, 60, 1);
+bhGroup.add(bhGlow1);
+
+const bhGlowMat2 = new THREE.SpriteMaterial({
+    map: bhGlowTex, transparent: true,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+    opacity: 0.3,
+});
+const bhGlow2 = new THREE.Sprite(bhGlowMat2);
+bhGlow2.scale.set(100, 100, 1);
+bhGroup.add(bhGlow2);
+
+// Wrap in a parent group so the entire black hole can be rotated
+const blackHoleRoot = new THREE.Group();
+blackHoleRoot.add(bhGroup);
+scene.add(blackHoleRoot);
+
+const bhParts = { disk: bhDisk, hotDisk: bhHotDisk, photon: bhPhoton, lens: bhLens, root: blackHoleRoot, bhTime: 0 };
+
 // === ANIMATION ===
 let time = 0;
 
@@ -503,6 +715,14 @@ function animate() {
     time += 0.005;
 
     sunMesh.rotation.y += 0.002;
+
+    // Black hole animation - differential rotation of accretion disk layers
+    bhParts.bhTime += 0.005;
+    const bhRotSpeed = 0.06 + 0.015 * Math.sin(bhParts.bhTime * 0.08);
+    bhParts.disk.rotation.y += bhRotSpeed;
+    bhParts.hotDisk.rotation.y += bhRotSpeed * 1.8;
+    bhParts.photon.rotation.y += bhRotSpeed * 0.4;
+    bhParts.lens.rotation.y += bhRotSpeed * 1.3;
 
     planets.forEach((p, idx) => {
         const orbit = p.data.orbit;
